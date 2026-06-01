@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "@/lib/api"
 import { useRefreshTick } from "@/lib/refresh-context"
 import type {
@@ -66,9 +66,10 @@ function fetchShared<T>(path: string, key: string): Promise<T> {
 }
 
 /**
- * useApi 通用数据获取 hook。
- * 自动跟随全局 RefreshContext 的 tick 重新拉取，组件卸载后忽略响应。
- * 同 URL + 同 tick 的并发调用共享一次请求。
+ * useApi 通用数据获取 hook（stale-while-revalidate）。
+ * - 首次加载：loading = true，组件显示加载占位
+ * - 后续刷新（refresh tick / refetch）：保留旧 data 继续展示，loading 不切回 true，后台静默拉新
+ * - 同 URL + 同 tick 的并发调用共享一次请求
  */
 function useApi<T>(path: string | null): QueryState<T> {
   const [data, setData] = useState<T | null>(null)
@@ -77,17 +78,23 @@ function useApi<T>(path: string | null): QueryState<T> {
   const [bump, setBump] = useState(0)
   const globalTick = useRefreshTick()
 
+  // 已经拿到过数据吗？用 ref 防止 setLoading 写回触发额外 effect。
+  const hasDataRef = useRef(false)
+
   useEffect(() => {
     if (path === null) {
       setLoading(false)
       return
     }
     let cancelled = false
-    setLoading(true)
+    // 关键：只有第一次（还没拿到过数据）才展示 loading；后续 polling / refetch 静默进行，
+    // 避免组件因 loading=true 短暂消失再回来造成"闪屏"。
+    if (!hasDataRef.current) setLoading(true)
     setError(null)
     fetchShared<T>(path, cacheKey(path, globalTick, bump))
       .then((d) => {
         if (cancelled) return
+        hasDataRef.current = true
         setData(d)
       })
       .catch((e: Error) => {

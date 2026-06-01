@@ -37,7 +37,7 @@ const eventMeta: Record<NotificationEvent, { icon: LucideIcon; cls: string }> = 
   monitor_failed: { icon: ShieldX, cls: "text-danger" },
 }
 
-function AlertFeed() {
+export function AlertFeed() {
   const summary = useDashboardSummary()
   const items = summary.data?.recent_notification_logs ?? []
 
@@ -80,7 +80,7 @@ const captchaTypeLabel: Record<string, string> = {
   custom: "自定义",
 }
 
-function CaptchaStatus() {
+export function CaptchaStatus() {
   const { data, loading } = useCaptchaConfigs()
   const refresh = useTriggerRefresh()
   const [editing, setEditing] = useState<CaptchaConfig | null>(null)
@@ -196,7 +196,7 @@ const notifyTypeIcon: Partial<Record<NotificationChannelType, LucideIcon>> = {
   feishu: Send,
 }
 
-function NotificationStatus() {
+export function NotificationStatus() {
   const { data, loading } = useNotificationChannels()
   const summary = useDashboardSummary()
   const refresh = useTriggerRefresh()
