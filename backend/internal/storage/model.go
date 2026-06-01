@@ -14,20 +14,41 @@ const (
 	ChannelTypeSub2API ChannelType = "sub2api"
 )
 
+// CredentialMode 渠道凭据模式：
+//   - password: 经典模式，存账号 + 密码，由 Connector 走完整登录流程
+//   - token:    跳过登录，存用户已有的 cookie / access_token，直接构造 AuthSession
+//
+// token 模式不依赖打码 / 不会自动续期，token 失效时表现为 last_error 显示鉴权失败。
+type CredentialMode string
+
+const (
+	CredentialModePassword CredentialMode = "password"
+	CredentialModeToken    CredentialMode = "token"
+)
+
 // Channel 上游渠道账号。Password / Turnstile API key 等敏感字段都加密保存。
 //
 // 注意：会话凭据（access_token / cookie / csrf）单独存放在 AuthSession 表。
+//
+// CredentialMode + PasswordCipher 的语义重载：
+//   - password 模式（默认）：Username + PasswordCipher 存账号密码，由 Connector.Login 用
+//   - token    模式：PasswordCipher 存 JSON blob（NewAPI: {cookie,user_id} / Sub2API: {access_token}），
+//     channel.Service 解析后直接构造 AuthSession，跳过 Login。Username 字段在 token 模式下保留
+//     用户填写的备注（一般是邮箱），仅做展示。
+//
+// 复用 PasswordCipher 而不新增 TokenCipher 是为了让现有的 GORM 行 / 加密路径 / 迁移流程零变动。
 type Channel struct {
-	ID               uint        `gorm:"primaryKey" json:"id"`
-	Name             string      `gorm:"size:128;not null;uniqueIndex" json:"name"`
-	Type             ChannelType `gorm:"size:32;not null;index" json:"type"`
-	SiteURL          string      `gorm:"size:512;not null" json:"site_url"`
-	Username         string      `gorm:"size:256;not null" json:"username"`
-	PasswordCipher   string      `gorm:"size:1024;not null" json:"-"`
-	TurnstileEnabled bool        `gorm:"default:false" json:"turnstile_enabled"`
-	CaptchaConfigID  *uint       `json:"captcha_config_id,omitempty"`
-	BalanceThreshold float64     `gorm:"default:0" json:"balance_threshold"`
-	MonitorEnabled   bool        `gorm:"default:true" json:"monitor_enabled"`
+	ID               uint           `gorm:"primaryKey" json:"id"`
+	Name             string         `gorm:"size:128;not null;uniqueIndex" json:"name"`
+	Type             ChannelType    `gorm:"size:32;not null;index" json:"type"`
+	SiteURL          string         `gorm:"size:512;not null" json:"site_url"`
+	Username         string         `gorm:"size:256;not null" json:"username"`
+	PasswordCipher   string         `gorm:"size:4096;not null" json:"-"`
+	CredentialMode   CredentialMode `gorm:"size:16;not null;default:'password'" json:"credential_mode"`
+	TurnstileEnabled bool           `gorm:"default:false" json:"turnstile_enabled"`
+	CaptchaConfigID  *uint          `json:"captcha_config_id,omitempty"`
+	BalanceThreshold float64        `gorm:"default:0" json:"balance_threshold"`
+	MonitorEnabled   bool           `gorm:"default:true" json:"monitor_enabled"`
 
 	// 最近一次采集结果（聚合视图，便于列表页直接展示）
 	LastBalance   *float64   `json:"last_balance,omitempty"`

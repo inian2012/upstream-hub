@@ -5,6 +5,8 @@
 
 export type ChannelType = "newapi" | "sub2api"
 
+export type CredentialMode = "password" | "token"
+
 export type NotificationChannelType =
   | "telegram"
   | "webhook"
@@ -34,6 +36,7 @@ export interface Channel {
   type: ChannelType
   site_url: string
   username: string
+  credential_mode: CredentialMode
   turnstile_enabled: boolean
   captcha_config_id?: number | null
   balance_threshold: number

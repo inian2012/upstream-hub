@@ -31,26 +31,30 @@ func registerChannels(g *gin.RouterGroup, d *Deps) {
 }
 
 type channelInput struct {
-	Name             string              `json:"name" binding:"required"`
-	Type             storage.ChannelType `json:"type" binding:"required"`
-	SiteURL          string              `json:"site_url" binding:"required"`
-	Username         string              `json:"username" binding:"required"`
-	Password         string              `json:"password" binding:"required"`
-	TurnstileEnabled bool                `json:"turnstile_enabled"`
-	CaptchaConfigID  *uint               `json:"captcha_config_id"`
-	BalanceThreshold float64             `json:"balance_threshold"`
-	MonitorEnabled   bool                `json:"monitor_enabled"`
+	Name             string                 `json:"name" binding:"required"`
+	Type             storage.ChannelType    `json:"type" binding:"required"`
+	SiteURL          string                 `json:"site_url" binding:"required"`
+	Username         string                 `json:"username"`
+	Password         string                 `json:"password"`
+	CredentialMode   storage.CredentialMode `json:"credential_mode"`
+	TokenCredential  string                 `json:"token_credential"` // JSON：token 模式时填写
+	TurnstileEnabled bool                   `json:"turnstile_enabled"`
+	CaptchaConfigID  *uint                  `json:"captcha_config_id"`
+	BalanceThreshold float64                `json:"balance_threshold"`
+	MonitorEnabled   bool                   `json:"monitor_enabled"`
 }
 
 type channelUpdateInput struct {
-	Name             *string  `json:"name"`
-	SiteURL          *string  `json:"site_url"`
-	Username         *string  `json:"username"`
-	Password         *string  `json:"password"`
-	TurnstileEnabled *bool    `json:"turnstile_enabled"`
-	CaptchaConfigID  *uint    `json:"captcha_config_id"`
-	BalanceThreshold *float64 `json:"balance_threshold"`
-	MonitorEnabled   *bool    `json:"monitor_enabled"`
+	Name             *string                 `json:"name"`
+	SiteURL          *string                 `json:"site_url"`
+	Username         *string                 `json:"username"`
+	Password         *string                 `json:"password"`
+	CredentialMode   *storage.CredentialMode `json:"credential_mode"`
+	TokenCredential  *string                 `json:"token_credential"`
+	TurnstileEnabled *bool                   `json:"turnstile_enabled"`
+	CaptchaConfigID  *uint                   `json:"captcha_config_id"`
+	BalanceThreshold *float64                `json:"balance_threshold"`
+	MonitorEnabled   *bool                   `json:"monitor_enabled"`
 }
 
 func listChannels(c *gin.Context, d *Deps) {
@@ -74,6 +78,8 @@ func createChannel(c *gin.Context, d *Deps) {
 		SiteURL:          in.SiteURL,
 		Username:         in.Username,
 		Password:         in.Password,
+		CredentialMode:   in.CredentialMode,
+		TokenCredential:  in.TokenCredential,
 		TurnstileEnabled: in.TurnstileEnabled,
 		CaptchaConfigID:  in.CaptchaConfigID,
 		BalanceThreshold: in.BalanceThreshold,
@@ -116,6 +122,8 @@ func updateChannel(c *gin.Context, d *Deps) {
 		SiteURL:          in.SiteURL,
 		Username:         in.Username,
 		Password:         in.Password,
+		CredentialMode:   in.CredentialMode,
+		TokenCredential:  in.TokenCredential,
 		TurnstileEnabled: in.TurnstileEnabled,
 		CaptchaConfigID:  in.CaptchaConfigID,
 		BalanceThreshold: in.BalanceThreshold,
