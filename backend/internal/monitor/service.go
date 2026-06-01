@@ -152,6 +152,7 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 	}
 
 	now := time.Now()
+	changes := make([]notify.RateChange, 0, len(results))
 	for _, r := range results {
 		prev, err := s.rates.Upsert(&storage.RateSnapshot{
 			ChannelID:       c.ID,
@@ -182,18 +183,18 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 			NewCompletionRatio: r.CompletionRatio,
 			ChangedAt:          now,
 		})
-		body := fmt.Sprintf(
-			"渠道：%s\n分组倍率：%s 由 %g %s至 %g\n变化时间：%s",
-			c.Name, r.ModelName, oldRatio, arrowFor(oldRatio, r.Ratio), r.Ratio,
-			now.Format("2006-01-02 15:04"),
-		)
-		_ = s.dispatcher.Dispatch(ctx, notify.Message{
-			Event:     storage.EventRateChanged,
-			ChannelID: c.ID,
-			ModelName: r.ModelName,
-			Subject:   fmt.Sprintf("【倍率变化提醒】%s · %s", c.Name, r.ModelName),
-			Body:      body,
+		changes = append(changes, notify.RateChange{
+			GroupName: r.ModelName,
+			OldRatio:  oldRatio,
+			NewRatio:  r.Ratio,
+			OldComp:   oldComp,
+			NewComp:   r.CompletionRatio,
+			ChangedAt: now,
 		})
+	}
+	// 一次扫描的所有变化打包推送：去抖策略（合并 / 涨跌幅过滤）由 Dispatcher.Policy 决定。
+	if len(changes) > 0 {
+		_ = s.dispatcher.DispatchRateBatch(ctx, c, changes)
 	}
 	progress.OK(ctx, progress.StageRates, fmt.Sprintf("拉到 %d 个分组", len(results)),
 		map[string]any{"count": len(results)})
@@ -223,17 +224,6 @@ func (s *Service) notifyError(ctx context.Context, c *storage.Channel, event sto
 		Subject:   fmt.Sprintf("[upstream-hub] %s %s", c.Name, subject),
 		Body:      err.Error(),
 	})
-}
-
-func arrowFor(oldV, newV float64) string {
-	switch {
-	case newV > oldV:
-		return "上涨"
-	case newV < oldV:
-		return "下调"
-	default:
-		return "调整"
-	}
 }
 
 func errString(err error) string {

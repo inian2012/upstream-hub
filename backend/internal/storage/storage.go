@@ -51,6 +51,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&BalanceSnapshot{},
 		&NotificationChannel{},
 		&NotificationLog{},
+		&NotificationCooldown{},
 		&MonitorLog{},
 	)
 }

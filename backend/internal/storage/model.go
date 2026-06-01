@@ -177,6 +177,26 @@ type NotificationLog struct {
 
 func (NotificationLog) TableName() string { return "notification_logs" }
 
+// NotificationCooldown 跨重启持久化的通知冷却记录。
+//
+// 业务键 (ChannelID, Event)：标记某渠道某类事件最近一次发送时间。
+// Dispatcher 在发送 cooldown-aware 事件（如 balance_low）前查这张表，
+// 命中且未过 cooldown 就跳过。
+//
+// 不和 NotificationLog 合并是因为：
+//   - NotificationLog 是审计/历史日志（用户可见、可清理）
+//   - NotificationCooldown 是去抖控制平面（仅最新一条、原子 upsert）
+//
+// ChannelID 这里指的是**上游渠道**（storage.Channel），不是通知渠道。
+type NotificationCooldown struct {
+	ChannelID  uint              `gorm:"primaryKey" json:"channel_id"`
+	Event      NotificationEvent `gorm:"primaryKey;size:64" json:"event"`
+	LastSentAt time.Time         `gorm:"not null" json:"last_sent_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+func (NotificationCooldown) TableName() string { return "notification_cooldowns" }
+
 // MonitorJob 监控任务类型。
 type MonitorJob string
 

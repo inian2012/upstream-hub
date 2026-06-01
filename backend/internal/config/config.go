@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Security  SecurityConfig  `mapstructure:"security"`
-	Auth      AuthConfig      `mapstructure:"auth"`
-	Scheduler SchedulerConfig `mapstructure:"scheduler"`
-	Log       LogConfig       `mapstructure:"log"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Security      SecurityConfig      `mapstructure:"security"`
+	Auth          AuthConfig          `mapstructure:"auth"`
+	Scheduler     SchedulerConfig     `mapstructure:"scheduler"`
+	Notifications NotificationsConfig `mapstructure:"notifications"`
+	Log           LogConfig           `mapstructure:"log"`
 }
 
 type ServerConfig struct {
@@ -81,6 +82,24 @@ type RetentionConfig struct {
 	MonitorLogsDays      int    `mapstructure:"monitorLogsDays"`
 	BalanceSnapshotsDays int    `mapstructure:"balanceSnapshotsDays"`
 	NotificationLogsDays int    `mapstructure:"notificationLogsDays"`
+}
+
+// NotificationsConfig 通知去抖策略。所有字段都是"少烦我"取向，默认不丢消息只合并。
+//
+//   - BatchRateChanges：同次扫描中将多个分组的变化合并成 1 条消息，避免上游一次大调价
+//     瞬间发出 30+ 条通知刷屏。默认 true。
+//   - MinChangePct：涨跌幅 < X% 的 rate_changed 跳过推送（仍会写入 rate_change_logs）。
+//     0 = 全发，对应原始行为。
+//   - BalanceLowCooldownMinutes：同一渠道的 balance_low 在 X 分钟内不重复推送。
+//     0 = 不冷却（每次扫描发现仍 < 阈值都发）。冷却状态持久化在 PostgreSQL 的
+//     notification_cooldowns 表，跨重启生效。
+//   - SendMaxAttempts：单条通知发送失败时最多尝试次数（含首次）。
+//     1 = 不重试。重试采用指数退避：1s / 2s / 4s …，上限 30s。
+type NotificationsConfig struct {
+	BatchRateChanges          bool    `mapstructure:"batchRateChanges"`
+	MinChangePct              float64 `mapstructure:"minChangePct"`
+	BalanceLowCooldownMinutes int     `mapstructure:"balanceLowCooldownMinutes"`
+	SendMaxAttempts           int     `mapstructure:"sendMaxAttempts"`
 }
 
 type LogConfig struct {
@@ -159,6 +178,13 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("auth.username", "admin")
 	v.SetDefault("auth.sessionTTLHours", 168) // 7 天
+
+	// 通知去抖：默认开合并、不过滤涨跌幅、balance_low 1h 内不重复、失败重试 3 次。
+	// 即"默认行为是合并刷屏 + 不重复 balance_low + 抗短时网络抖动"，不丢任何 rate_changed 事件。
+	v.SetDefault("notifications.batchRateChanges", true)
+	v.SetDefault("notifications.minChangePct", 0)
+	v.SetDefault("notifications.balanceLowCooldownMinutes", 60)
+	v.SetDefault("notifications.sendMaxAttempts", 3)
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")

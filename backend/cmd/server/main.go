@@ -81,7 +81,12 @@ func main() {
 	monLogs := storage.NewMonitorLogs(db)
 
 	channelSvc := channel.NewService(channels, authSessions, captchas, monLogs, cipher)
-	dispatcher := notify.NewDispatcher(notifies, cipher, log)
+	dispatcher := notify.NewDispatcher(notifies, cipher, log, notify.Policy{
+		BatchRateChanges:   cfg.Notifications.BatchRateChanges,
+		MinChangePct:       cfg.Notifications.MinChangePct,
+		BalanceLowCooldown: time.Duration(cfg.Notifications.BalanceLowCooldownMinutes) * time.Minute,
+		SendMaxAttempts:    cfg.Notifications.SendMaxAttempts,
+	})
 	monitorSvc := monitor.NewService(channels, rates, monLogs, channelSvc, dispatcher, log)
 
 	sch := scheduler.New(cfg.Scheduler, monitorSvc, monLogs, rates, notifies, log)
