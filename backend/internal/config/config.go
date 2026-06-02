@@ -57,9 +57,14 @@ type SecurityConfig struct {
 }
 
 // AuthConfig 后台单用户登录配置。
-// Username / Password 是写死的管理员凭据，TokenSecret 用于签发 HMAC token。
+//
+// Enabled = false（默认）时整套鉴权被关掉：/api/* 全部免 token，前端检测后跳过登录页。
+// 适合纯内网 / 反代后面的部署。需要公网暴露时必须显式 Enabled=true 并设强密码。
+//
+// Enabled=true 时 Username/Password 是写死的管理员凭据，TokenSecret 用于签发 HMAC token。
 // 如果 TokenSecret 为空，会回退使用 Security.AppSecret，保证有合理默认。
 type AuthConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
 	Username        string `mapstructure:"username"`
 	Password        string `mapstructure:"password"`
 	TokenSecret     string `mapstructure:"tokenSecret"`
@@ -133,8 +138,9 @@ func Load(path string) (*Config, error) {
 	v.SetEnvPrefix("UPSTREAMHUB")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-	// APP_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD 是独立约定的环境变量名，不带前缀。
+	// APP_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD / AUTH_ENABLED 是独立约定的环境变量名，不带前缀。
 	_ = v.BindEnv("security.appSecret", "APP_SECRET")
+	_ = v.BindEnv("auth.enabled", "AUTH_ENABLED")
 	_ = v.BindEnv("auth.username", "ADMIN_USERNAME")
 	_ = v.BindEnv("auth.password", "ADMIN_PASSWORD")
 	_ = v.BindEnv("auth.tokenSecret", "AUTH_TOKEN_SECRET")
@@ -176,6 +182,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.retention.balanceSnapshotsDays", 90)
 	v.SetDefault("scheduler.retention.notificationLogsDays", 90)
 
+	v.SetDefault("auth.enabled", false)
 	v.SetDefault("auth.username", "admin")
 	v.SetDefault("auth.sessionTTLHours", 168) // 7 天
 

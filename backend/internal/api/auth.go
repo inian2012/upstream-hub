@@ -21,6 +21,16 @@ type loginInput struct {
 }
 
 func login(c *gin.Context, d *Deps) {
+	// 鉴权关闭：任何登录请求都直接成功；前端在 /auth/me 已经知道无需登录。
+	if d.Auth == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"auth_disabled": true,
+				"username":      "anonymous",
+			},
+		})
+		return
+	}
 	var in loginInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -40,7 +50,21 @@ func login(c *gin.Context, d *Deps) {
 	})
 }
 
+// whoami 既是"前端启动探测"接口也是"已登录信息"接口。
+//
+//   - 鉴权关闭 → 返回 {auth_disabled: true}，前端据此跳过登录页
+//   - 鉴权开启但未带 token → 中间件已经在前面 401 拦截，根本走不到这里
+//   - 鉴权开启 + 有效 token → 返回 username
 func whoami(c *gin.Context, d *Deps) {
+	if d.Auth == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"auth_disabled": true,
+				"username":      "anonymous",
+			},
+		})
+		return
+	}
 	sub, _ := c.Get("authSubject")
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"username": sub}})
 }

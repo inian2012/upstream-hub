@@ -15,7 +15,7 @@ import { relativeTime } from "@/lib/format"
 
 export function MonitorHeader() {
   const { theme, setTheme } = useTheme()
-  const { username, logout } = useAuth()
+  const { username, authDisabled, logout } = useAuth()
   const refresh = useTriggerRefresh()
   const channels = useChannels()
   const [mounted, setMounted] = useState(false)
@@ -125,18 +125,20 @@ export function MonitorHeader() {
             <ChevronDown className="size-3 text-muted-foreground" />
           </Button>
 
-          {/* logout */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={logout}
-            className="gap-1.5 border-border bg-background text-foreground hover:bg-muted"
-            aria-label="退出登录"
-            title={username ? `${username} · 退出登录` : "退出登录"}
-          >
-            <LogOut className="size-3.5" />
-            <span className="hidden sm:inline">{username ?? "退出"}</span>
-          </Button>
+          {/* logout — 鉴权关闭时整个按钮不显示 */}
+          {authDisabled ? null : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="gap-1.5 border-border bg-background text-foreground hover:bg-muted"
+              aria-label="退出登录"
+              title={username ? `${username} · 退出登录` : "退出登录"}
+            >
+              <LogOut className="size-3.5" />
+              <span className="hidden sm:inline">{username ?? "退出"}</span>
+            </Button>
+          )}
         </div>
       </div>
     </header>

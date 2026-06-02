@@ -49,20 +49,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Auth：账号密码取自 config，token secret 缺省回退到 AppSecret。
-	tokenSecret := cfg.Auth.TokenSecret
-	if tokenSecret == "" {
-		tokenSecret = cfg.Security.AppSecret
-	}
-	authSvc, err := auth.New(
-		cfg.Auth.Username,
-		cfg.Auth.Password,
-		tokenSecret,
-		time.Duration(cfg.Auth.SessionTTLHours)*time.Hour,
-	)
-	if err != nil {
-		log.Error("init auth failed (set ADMIN_USERNAME / ADMIN_PASSWORD)", "err", err)
-		os.Exit(1)
+	// Auth：默认禁用（AUTH_ENABLED=false），所有 /api/* 免 token；
+	// 显式开启时账号/密码必填，token secret 缺省回退到 AppSecret。
+	var authSvc *auth.Service
+	if cfg.Auth.Enabled {
+		tokenSecret := cfg.Auth.TokenSecret
+		if tokenSecret == "" {
+			tokenSecret = cfg.Security.AppSecret
+		}
+		authSvc, err = auth.New(
+			cfg.Auth.Username,
+			cfg.Auth.Password,
+			tokenSecret,
+			time.Duration(cfg.Auth.SessionTTLHours)*time.Hour,
+		)
+		if err != nil {
+			log.Error("init auth failed (set ADMIN_USERNAME / ADMIN_PASSWORD or AUTH_ENABLED=false)", "err", err)
+			os.Exit(1)
+		}
+		log.Info("auth enabled", "username", cfg.Auth.Username)
+	} else {
+		log.Warn("auth disabled — all /api/* endpoints are open; set AUTH_ENABLED=true for production exposure")
 	}
 
 	db, err := storage.Open(cfg.Database.ToStorageConfig())
