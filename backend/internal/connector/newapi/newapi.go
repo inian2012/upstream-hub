@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ type Client struct {
 
 func New() *Client {
 	c := resty.New().
-		SetTimeout(30 * time.Second).
+		SetTimeout(30*time.Second).
 		SetHeader("User-Agent", "upstream-hub/0.1").
 		SetHeader("Accept", "application/json")
 	return &Client{http: c}
@@ -38,6 +39,8 @@ type newapiResp struct {
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
 }
+
+const defaultQuotaPerUnit = 500000
 
 func (c *Client) GetTurnstileSiteKey(ctx context.Context, ch *connector.Channel) (string, error) {
 	body, err := c.getJSON(ctx, strings.TrimRight(ch.SiteURL, "/")+"/api/status", nil)
@@ -120,18 +123,9 @@ func (c *Client) CheckAuth(ctx context.Context, ch *connector.Channel, session *
 
 func (c *Client) GetBalance(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.BalanceResult, error) {
 	site := strings.TrimRight(ch.SiteURL, "/")
-	statusBody, err := c.getJSON(ctx, site+"/api/status", nil)
+	quotaPerUnit, err := c.getQuotaPerUnit(ctx, site)
 	if err != nil {
-		return nil, fmt.Errorf("newapi status: %w", err)
-	}
-	var status struct {
-		QuotaPerUnit float64 `json:"quota_per_unit"`
-	}
-	if err := json.Unmarshal(statusBody, &status); err != nil {
-		return nil, fmt.Errorf("newapi status decode: %w", err)
-	}
-	if status.QuotaPerUnit <= 0 {
-		status.QuotaPerUnit = 500000
+		return nil, err
 	}
 
 	selfBody, err := c.getJSON(ctx, site+"/api/user/self", session)
@@ -145,7 +139,7 @@ func (c *Client) GetBalance(ctx context.Context, ch *connector.Channel, session 
 		return nil, fmt.Errorf("newapi self decode: %w", err)
 	}
 	return &connector.BalanceResult{
-		Balance:   self.Quota / status.QuotaPerUnit,
+		Balance:   self.Quota / quotaPerUnit,
 		SampledAt: time.Now(),
 	}, nil
 }
@@ -177,6 +171,88 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 		})
 	}
 	return out, nil
+}
+
+func (c *Client) GetUsageStats(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.UsageStatsResult, error) {
+	site := strings.TrimRight(ch.SiteURL, "/")
+	quotaPerUnit, err := c.getQuotaPerUnit(ctx, site)
+	if err != nil {
+		return nil, err
+	}
+
+	selfBody, err := c.getJSON(ctx, site+"/api/user/self", session)
+	if err != nil {
+		return nil, fmt.Errorf("newapi self: %w", err)
+	}
+	var self struct {
+		UsedQuota float64 `json:"used_quota"`
+	}
+	if err := json.Unmarshal(selfBody, &self); err != nil {
+		return nil, fmt.Errorf("newapi self decode: %w", err)
+	}
+
+	startOfToday, now := todayRange()
+	todayQuota, err := c.getLogStatQuota(ctx, site, session, startOfToday.Unix(), now.Unix())
+	if err != nil {
+		return nil, err
+	}
+
+	return &connector.UsageStatsResult{
+		TodayActualCost: todayQuota / quotaPerUnit,
+		TotalActualCost: self.UsedQuota / quotaPerUnit,
+		SampledAt:       now,
+	}, nil
+}
+
+func todayRange() (time.Time, time.Time) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		loc = time.Local
+	}
+	now := time.Now().In(loc)
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	return startOfToday, now
+}
+
+func (c *Client) getQuotaPerUnit(ctx context.Context, site string) (float64, error) {
+	statusBody, err := c.getJSON(ctx, site+"/api/status", nil)
+	if err != nil {
+		return 0, fmt.Errorf("newapi status: %w", err)
+	}
+	var status struct {
+		QuotaPerUnit float64 `json:"quota_per_unit"`
+	}
+	if err := json.Unmarshal(statusBody, &status); err != nil {
+		return 0, fmt.Errorf("newapi status decode: %w", err)
+	}
+	if status.QuotaPerUnit <= 0 {
+		return defaultQuotaPerUnit, nil
+	}
+	return status.QuotaPerUnit, nil
+}
+
+func (c *Client) getLogStatQuota(ctx context.Context, site string, session *connector.AuthSession, start, end int64) (float64, error) {
+	u, err := url.Parse(site + "/api/log/self/stat")
+	if err != nil {
+		return 0, err
+	}
+	q := u.Query()
+	q.Set("type", "2")
+	q.Set("start_timestamp", strconv.FormatInt(start, 10))
+	q.Set("end_timestamp", strconv.FormatInt(end, 10))
+	u.RawQuery = q.Encode()
+
+	body, err := c.getJSON(ctx, u.String(), session)
+	if err != nil {
+		return 0, fmt.Errorf("newapi log self stat: %w", err)
+	}
+	var stat struct {
+		Quota float64 `json:"quota"`
+	}
+	if err := json.Unmarshal(body, &stat); err != nil {
+		return 0, fmt.Errorf("newapi log self stat decode: %w", err)
+	}
+	return stat.Quota, nil
 }
 
 func (c *Client) getJSON(ctx context.Context, url string, session *connector.AuthSession) ([]byte, error) {

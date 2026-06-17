@@ -130,7 +130,7 @@ func (r *Rates) AggregateConsumption(todayStart time.Time) (ConsumptionAggregate
 			FROM balance_snapshots bs
 			JOIN channels c ON c.id = bs.channel_id
 			WHERE c.deleted_at IS NULL
-			  AND (c.type <> 'sub2api' OR c.last_total_consumption IS NULL)
+			  AND c.last_total_consumption IS NULL
 		),
 		deltas AS (
 			SELECT
@@ -150,7 +150,6 @@ func (r *Rates) AggregateConsumption(todayStart time.Time) (ConsumptionAggregate
 				COALESCE(SUM(COALESCE(last_total_consumption, 0) / COALESCE(NULLIF(recharge_ratio, 0), 1)), 0) AS total
 			FROM channels
 			WHERE deleted_at IS NULL
-			  AND type = 'sub2api'
 			  AND last_total_consumption IS NOT NULL
 		),
 		delta_stats AS (
