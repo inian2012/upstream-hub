@@ -53,6 +53,7 @@ interface ConfigState {
   username: string
   password: string
   from: string
+  from_name: string
   to: string // 逗号分隔
   use_tls: boolean
   // wecom / dingtalk / feishu
@@ -74,20 +75,32 @@ interface FormState {
   subs: SubRow[]
 }
 
-function emptyConfig(): ConfigState {
+interface EmailDefaultsResponse {
+  host: string
+  port: number
+  username: string
+  from: string
+  from_name: string
+  to: string
+  use_tls: boolean
+  password_configured: boolean
+}
+
+function emptyConfig(withEmailDefaults = false): ConfigState {
   return {
     bot_token: "",
     chat_id: "",
     url: "",
     method: "POST",
     headers: "",
-    host: "",
-    port: "",
+    host: withEmailDefaults ? "smtp.gmail.com" : "",
+    port: withEmailDefaults ? "465" : "",
     username: "",
     password: "",
     from: "",
+    from_name: withEmailDefaults ? "Sub2API" : "",
     to: "",
-    use_tls: false,
+    use_tls: withEmailDefaults,
     webhook_url: "",
     secret: "",
   }
@@ -108,17 +121,34 @@ function initialState(c?: NotificationChannel | null): FormState {
     }
   }
   return {
-    name: c?.name ?? "",
-    type: c?.type ?? "telegram",
+    name: c?.name ?? "邮箱通知",
+    type: c?.type ?? "email",
     enabled: c?.enabled ?? true,
-    cfg: emptyConfig(),
+    cfg: emptyConfig(!c),
     subs,
+  }
+}
+
+function applyEmailDefaults(cfg: ConfigState, defaults: EmailDefaultsResponse): ConfigState {
+  return {
+    ...cfg,
+    host: cfg.host || defaults.host || "smtp.gmail.com",
+    port: cfg.port || (defaults.port ? String(defaults.port) : "465"),
+    username: cfg.username || defaults.username || "",
+    from: cfg.from || defaults.from || defaults.username || "",
+    from_name: cfg.from_name || defaults.from_name || "Sub2API",
+    to: cfg.to || defaults.to || defaults.from || defaults.username || "",
+    use_tls: defaults.use_tls ?? cfg.use_tls,
   }
 }
 
 // buildConfigByType 把 cfg state 序列化成各 notifier 期望的 JSON。
 // 留空字段会被剔除（除非该字段是必填）。
-function buildConfigByType(type: NotificationChannelType, cfg: ConfigState): string {
+function buildConfigByType(
+  type: NotificationChannelType,
+  cfg: ConfigState,
+  options: { partial?: boolean } = {},
+): string {
   switch (type) {
     case "telegram":
       return JSON.stringify({
@@ -141,18 +171,19 @@ function buildConfigByType(type: NotificationChannelType, cfg: ConfigState): str
     }
     case "email": {
       const port = Number(cfg.port)
-      if (!Number.isFinite(port) || port <= 0) throw new Error("端口必须是正整数")
+      if (cfg.port && (!Number.isFinite(port) || port <= 0)) throw new Error("端口必须是正整数")
       const to = cfg.to.split(",").map((s) => s.trim()).filter(Boolean)
-      if (to.length === 0) throw new Error("收件人至少一个")
-      return JSON.stringify({
-        host: cfg.host,
-        port,
-        username: cfg.username,
-        password: cfg.password,
-        from: cfg.from,
-        to,
-        use_tls: cfg.use_tls,
-      })
+      if (!options.partial && to.length === 0) throw new Error("收件人至少一个")
+      const body: Record<string, unknown> = {}
+      if (cfg.host.trim()) body.host = cfg.host
+      if (cfg.port.trim()) body.port = port
+      if (cfg.username.trim()) body.username = cfg.username
+      if (cfg.from.trim()) body.from = cfg.from
+      if (cfg.from_name.trim()) body.from_name = cfg.from_name
+      if (to.length > 0) body.to = to
+      if (!options.partial || cfg.use_tls) body.use_tls = cfg.use_tls
+      if (cfg.password.trim()) body.password = cfg.password
+      return JSON.stringify(body)
     }
     case "wecom":
       return JSON.stringify({ webhook_url: cfg.webhook_url })
@@ -173,6 +204,7 @@ export function NotificationFormDialog({
   const [form, setForm] = useState<FormState>(() => initialState(channel))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [passwordConfigured, setPasswordConfigured] = useState(false)
   const refresh = useTriggerRefresh()
   const channels = useChannels()
 
@@ -180,6 +212,26 @@ export function NotificationFormDialog({
     if (open) {
       setForm(initialState(channel))
       setError(null)
+      setPasswordConfigured(false)
+    }
+  }, [open, channel])
+
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    apiFetch<EmailDefaultsResponse>("/notifications/email-defaults")
+      .then((defaults) => {
+        if (!alive) return
+        setPasswordConfigured(defaults.password_configured)
+        if (!channel) {
+          setForm((f) => ({ ...f, cfg: applyEmailDefaults(f.cfg, defaults) }))
+        }
+      })
+      .catch(() => {
+        if (alive) setPasswordConfigured(false)
+      })
+    return () => {
+      alive = false
     }
   }, [open, channel])
 
@@ -230,14 +282,23 @@ export function NotificationFormDialog({
           case "webhook":
             return !!form.cfg.url
           case "email":
-            return !!(form.cfg.host || form.cfg.from || form.cfg.to)
+            return !!(
+              form.cfg.host ||
+              form.cfg.port ||
+              form.cfg.username ||
+              form.cfg.password ||
+              form.cfg.from ||
+              form.cfg.from_name ||
+              form.cfg.to ||
+              form.cfg.use_tls
+            )
           default:
             return !!form.cfg.webhook_url
         }
       })()
 
       if (requireConfig || hasConfigInput) {
-        configJSON = buildConfigByType(form.type, form.cfg)
+        configJSON = buildConfigByType(form.type, form.cfg, { partial: isEdit })
       }
 
       const subscriptions = JSON.stringify(
@@ -292,38 +353,12 @@ export function NotificationFormDialog({
             <Label htmlFor="notify-name">渠道名</Label>
             <Input
               id="notify-name"
-              placeholder="例如：TG-运维群"
+              placeholder="例如：余额提醒邮箱"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
               disabled={submitting}
             />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="notify-type">类型</Label>
-            <Select
-              value={form.type}
-              onValueChange={(v) =>
-                setForm({ ...form, type: v as NotificationChannelType, cfg: emptyConfig() })
-              }
-              disabled={isEdit || submitting}
-            >
-              <SelectTrigger id="notify-type" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="telegram">Telegram</SelectItem>
-                <SelectItem value="webhook">Webhook</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="wecom">企业微信</SelectItem>
-                <SelectItem value="dingtalk">钉钉</SelectItem>
-                <SelectItem value="feishu">飞书</SelectItem>
-              </SelectContent>
-            </Select>
-            {isEdit ? (
-              <p className="text-[11px] text-muted-foreground">类型创建后不可修改</p>
-            ) : null}
           </div>
 
           <ConfigFields
@@ -332,6 +367,7 @@ export function NotificationFormDialog({
             updateCfg={updateCfg}
             disabled={submitting}
             isEdit={isEdit}
+            passwordConfigured={passwordConfigured}
           />
 
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
@@ -418,9 +454,17 @@ interface ConfigFieldsProps {
   updateCfg: (patch: Partial<ConfigState>) => void
   disabled: boolean
   isEdit: boolean
+  passwordConfigured: boolean
 }
 
-function ConfigFields({ type, cfg, updateCfg, disabled, isEdit }: ConfigFieldsProps) {
+function ConfigFields({
+  type,
+  cfg,
+  updateCfg,
+  disabled,
+  isEdit,
+  passwordConfigured,
+}: ConfigFieldsProps) {
   const hint = isEdit ? (
     <p className="text-[11px] text-muted-foreground">编辑模式下留空保留原值</p>
   ) : null
@@ -550,25 +594,38 @@ function ConfigFields({ type, cfg, updateCfg, disabled, isEdit }: ConfigFieldsPr
             <Input
               id="em-pass"
               type="password"
+              placeholder={passwordConfigured || isEdit ? "已配置，留空以保留当前值" : ""}
               value={cfg.password}
               onChange={(e) => updateCfg({ password: e.target.value })}
               disabled={disabled}
             />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="em-from">From</Label>
-          <Input
-            id="em-from"
-            placeholder="alert@example.com"
-            value={cfg.from}
-            onChange={(e) => updateCfg({ from: e.target.value })}
-            required={!isEdit}
-            disabled={disabled}
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="em-from">发件人邮箱</Label>
+            <Input
+              id="em-from"
+              placeholder="alert@example.com"
+              value={cfg.from}
+              onChange={(e) => updateCfg({ from: e.target.value })}
+              required={!isEdit}
+              disabled={disabled}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="em-from-name">发件人名称</Label>
+            <Input
+              id="em-from-name"
+              placeholder="Sub2API"
+              value={cfg.from_name}
+              onChange={(e) => updateCfg({ from_name: e.target.value })}
+              disabled={disabled}
+            />
+          </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="em-to">To (逗号分隔多个)</Label>
+          <Label htmlFor="em-to">收件人邮箱 (逗号分隔多个)</Label>
           <Input
             id="em-to"
             placeholder="a@x.com, b@x.com"
@@ -580,7 +637,7 @@ function ConfigFields({ type, cfg, updateCfg, disabled, isEdit }: ConfigFieldsPr
         </div>
         <div className="flex items-center justify-between">
           <Label htmlFor="em-tls" className="text-sm font-normal">
-            隐式 TLS (一般 465 端口开启)
+            使用 TLS
           </Label>
           <Switch
             id="em-tls"

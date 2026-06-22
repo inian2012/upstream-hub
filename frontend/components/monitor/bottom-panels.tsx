@@ -223,6 +223,7 @@ export function NotificationStatus() {
   const totalLogs = summary.data?.recent_notification_logs ?? []
   const lastSent = totalLogs.length > 0 ? totalLogs[0] : null
   const recentFailed = totalLogs.filter((l) => !l.success).length
+  const emailChannels = (data ?? []).filter((c) => c.type === "email")
 
   async function handleDelete(c: NotificationChannel) {
     const ok = await confirm({
@@ -253,7 +254,7 @@ export function NotificationStatus() {
         { method: "POST" },
       )
       if (res.ok) {
-        toast.success(`已发送测试消息到 ${c.name}`)
+        toast.success(`已发送测试邮件到 ${c.name}`)
       } else {
         toast.error(`测试失败：${res.error ?? "未知错误"}`)
       }
@@ -286,11 +287,11 @@ export function NotificationStatus() {
       <CardContent className="space-y-3">
         {loading ? (
           <p className="text-xs text-muted-foreground">{"加载中…"}</p>
-        ) : !data || data.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{"暂未配置通知渠道"}</p>
+        ) : emailChannels.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{"暂未配置邮箱通知"}</p>
         ) : (
           <ul className="divide-y divide-border rounded-lg border border-border">
-            {data.map((c) => {
+            {emailChannels.map((c) => {
               const Icon = notifyTypeIcon[c.type] ?? Send
               const subCount = parseSubCount(c.subscriptions)
               return (
@@ -300,7 +301,7 @@ export function NotificationStatus() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {c.type}
+                        邮箱
                         {" · "}
                         {subCount === 0 ? "订阅全部" : `${subCount} 条订阅`}
                         {!c.enabled ? " · 已禁用" : ""}
