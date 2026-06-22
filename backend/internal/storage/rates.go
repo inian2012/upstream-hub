@@ -29,6 +29,7 @@ func (r *Rates) Upsert(snapshot *RateSnapshot) (*RateSnapshot, error) {
 	case err == nil:
 		old := prev
 		prev.Ratio = snapshot.Ratio
+		prev.RatioLabel = snapshot.RatioLabel
 		prev.CompletionRatio = snapshot.CompletionRatio
 		prev.Description = snapshot.Description
 		prev.LastSeenAt = snapshot.LastSeenAt
@@ -45,6 +46,17 @@ func (r *Rates) Upsert(snapshot *RateSnapshot) (*RateSnapshot, error) {
 	default:
 		return nil, err
 	}
+}
+
+// DeleteMissingForChannel removes current snapshots that were not returned by
+// the latest successful upstream scan. This keeps the displayed group count in
+// sync when upstream groups are deleted or hidden.
+func (r *Rates) DeleteMissingForChannel(channelID uint, seenNames []string) error {
+	q := r.db.Where("channel_id = ?", channelID)
+	if len(seenNames) > 0 {
+		q = q.Where("model_name NOT IN ?", seenNames)
+	}
+	return q.Delete(&RateSnapshot{}).Error
 }
 
 func (r *Rates) AppendChange(log *RateChangeLog) error {

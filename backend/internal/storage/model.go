@@ -117,6 +117,7 @@ type RateSnapshot struct {
 	ModelName       string  `gorm:"size:256;not null;uniqueIndex:idx_rate_chan_model" json:"model_name"`
 	Description     string  `gorm:"size:512" json:"description,omitempty"`
 	Ratio           float64 `gorm:"not null" json:"ratio"`
+	RatioLabel      string  `gorm:"size:64" json:"ratio_label,omitempty"`
 	CompletionRatio float64 `json:"completion_ratio"`
 
 	FirstSeenAt time.Time `json:"first_seen_at"`

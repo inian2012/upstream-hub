@@ -48,6 +48,7 @@ type RateResult struct {
 	ModelName       string
 	Description     string
 	Ratio           float64
+	RatioLabel      string
 	CompletionRatio float64
 }
 

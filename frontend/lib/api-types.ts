@@ -71,6 +71,7 @@ export interface RateSnapshot {
   model_name: string
   description?: string
   ratio: number
+  ratio_label?: string
   completion_ratio: number
   first_seen_at: string
   last_seen_at: string

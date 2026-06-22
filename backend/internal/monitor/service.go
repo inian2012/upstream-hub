@@ -192,12 +192,15 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 
 	now := time.Now()
 	changes := make([]notify.RateChange, 0, len(results))
+	seenNames := make([]string, 0, len(results))
 	for _, r := range results {
+		seenNames = append(seenNames, r.ModelName)
 		prev, err := s.rates.Upsert(&storage.RateSnapshot{
 			ChannelID:       c.ID,
 			ModelName:       r.ModelName,
 			Description:     r.Description,
 			Ratio:           r.Ratio,
+			RatioLabel:      r.RatioLabel,
 			CompletionRatio: r.CompletionRatio,
 			LastSeenAt:      now,
 		})
@@ -206,6 +209,9 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 			continue
 		}
 		if prev == nil {
+			continue
+		}
+		if prev.RatioLabel != "" || r.RatioLabel != "" {
 			continue
 		}
 		if prev.Ratio == r.Ratio && prev.CompletionRatio == r.CompletionRatio {
@@ -230,6 +236,9 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 			NewComp:   r.CompletionRatio,
 			ChangedAt: now,
 		})
+	}
+	if err := s.rates.DeleteMissingForChannel(c.ID, seenNames); err != nil {
+		s.log.Warn("delete stale rates failed", "channel", c.Name, "err", err)
 	}
 	// 一次扫描的所有变化打包推送：去抖策略（合并 / 涨跌幅过滤）由 Dispatcher.Policy 决定。
 	if len(changes) > 0 {

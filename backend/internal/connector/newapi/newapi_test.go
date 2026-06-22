@@ -100,6 +100,44 @@ func TestGetBalanceUsesDefaultQuotaPerUnit(t *testing.T) {
 	}
 }
 
+func TestGetRatesKeepsNonNumericNewAPIGroup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/user/self/groups" {
+			http.NotFound(w, r)
+			return
+		}
+		writeNewAPIData(t, w, map[string]any{
+			"default": map[string]any{"ratio": 1.25, "desc": "Default group"},
+			"auto":    map[string]any{"ratio": "自动", "desc": "Automatic group"},
+			"string":  map[string]any{"ratio": "2.5", "desc": "String numeric group"},
+		})
+	}))
+	defer server.Close()
+
+	rates, err := New().GetRates(context.Background(), &connector.Channel{SiteURL: server.URL}, &connector.AuthSession{})
+	if err != nil {
+		t.Fatalf("GetRates() error = %v", err)
+	}
+	if len(rates) != 3 {
+		t.Fatalf("len(rates) = %d, want 3", len(rates))
+	}
+
+	byName := map[string]connector.RateResult{}
+	for _, rate := range rates {
+		byName[rate.ModelName] = rate
+	}
+	if byName["default"].Ratio != 1.25 || byName["default"].RatioLabel != "" {
+		t.Fatalf("default rate = %+v, want numeric 1.25", byName["default"])
+	}
+	if byName["auto"].Ratio != 0 || byName["auto"].RatioLabel != "自动" {
+		t.Fatalf("auto rate = %+v, want label 自动", byName["auto"])
+	}
+	if byName["string"].Ratio != 2.5 || byName["string"].RatioLabel != "" {
+		t.Fatalf("string rate = %+v, want numeric 2.5", byName["string"])
+	}
+}
+
 func writeNewAPIData(t *testing.T, w http.ResponseWriter, data any) {
 	t.Helper()
 	if err := json.NewEncoder(w).Encode(map[string]any{

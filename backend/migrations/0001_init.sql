@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS rate_snapshots (
     model_name        VARCHAR(256) NOT NULL,
     description       VARCHAR(512),
     ratio             DOUBLE PRECISION NOT NULL,
+    ratio_label       VARCHAR(64),
     completion_ratio  DOUBLE PRECISION,
     first_seen_at     TIMESTAMPTZ NOT NULL,
     last_seen_at      TIMESTAMPTZ NOT NULL

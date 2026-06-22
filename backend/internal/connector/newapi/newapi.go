@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -159,18 +160,36 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 	}
 	out := make([]connector.RateResult, 0, len(raw))
 	for name, v := range raw {
-		var ratio float64
-		if err := json.Unmarshal(v.Ratio, &ratio); err != nil {
-			// "auto" 组的 ratio 是字符串 "自动"，跳过。
-			continue
-		}
+		ratio, ratioLabel := parseNewAPIRatio(v.Ratio)
 		out = append(out, connector.RateResult{
 			ModelName:   name,
 			Description: v.Desc,
 			Ratio:       ratio,
+			RatioLabel:  ratioLabel,
 		})
 	}
 	return out, nil
+}
+
+func parseNewAPIRatio(raw json.RawMessage) (float64, string) {
+	var ratio float64
+	if err := json.Unmarshal(raw, &ratio); err == nil && !math.IsNaN(ratio) && !math.IsInf(ratio, 0) {
+		return ratio, ""
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return 0, "未知"
+		}
+		if parsed, err := strconv.ParseFloat(text, 64); err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
+			return parsed, ""
+		}
+		return 0, text
+	}
+
+	return 0, "未知"
 }
 
 func (c *Client) GetUsageStats(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.UsageStatsResult, error) {

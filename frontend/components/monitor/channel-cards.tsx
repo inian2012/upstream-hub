@@ -37,7 +37,7 @@ import {
 } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { syncChannelStream, testLoginStream, type ProgressEvent } from "@/lib/sync-stream"
-import type { Channel } from "@/lib/api-types"
+import type { Channel, RateSnapshot } from "@/lib/api-types"
 import { ChannelFormDialog } from "@/components/monitor/channel-form-dialog"
 
 type Status = "healthy" | "low" | "failed" | "idle"
@@ -73,11 +73,33 @@ function ratioTone(r: number): string {
   return "bg-muted text-foreground ring-border"
 }
 
+function rateSortValue(rate: RateSnapshot, recharge: number): number {
+  return rate.ratio_label ? Number.POSITIVE_INFINITY : convertedRate(rate.ratio, recharge)
+}
+
+function displayRateValue(rate: RateSnapshot, recharge: number): string {
+  if (rate.ratio_label) return rate.ratio_label
+  return convertedRate(rate.ratio, recharge).toFixed(2)
+}
+
+function rateChipClass(rate: RateSnapshot, recharge: number): string {
+  if (rate.ratio_label) {
+    return "border border-dashed border-border bg-background text-muted-foreground shadow-xs hover:bg-muted/60"
+  }
+  const displayRatio = convertedRate(rate.ratio, recharge)
+  return cn(
+    "ring-1 ring-inset",
+    ratioTone(displayRatio),
+  )
+}
+
 /** InlineRates 在渠道卡片内部展示当前所有分组倍率，默认 2 行折叠 + 展开按钮。 */
 function InlineRates({ channelID, recharge }: { channelID: number; recharge: number }) {
   const { data, loading } = useChannelRates(channelID)
   const rates = [...(data ?? [])].sort(
-    (a, b) => convertedRate(a.ratio, recharge) - convertedRate(b.ratio, recharge),
+    (a, b) =>
+      rateSortValue(a, recharge) - rateSortValue(b, recharge) ||
+      a.model_name.localeCompare(b.model_name),
   )
   const [expanded, setExpanded] = useState(false)
   const [hasOverflow, setHasOverflow] = useState(false)
@@ -136,22 +158,27 @@ function InlineRates({ channelID, recharge }: { channelID: number; recharge: num
           )}
         >
           {rates.map((r) => {
-            const displayRatio = convertedRate(r.ratio, recharge)
             return (
             <Tooltip key={r.id} delayDuration={150}>
               <TooltipTrigger asChild>
                 <span
                   className={cn(
-                    "inline-flex cursor-default items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ring-1 ring-inset transition-colors hover:bg-muted/60",
-                    ratioTone(displayRatio),
+                    "inline-flex max-w-full cursor-default items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] transition-colors",
+                    rateChipClass(r, recharge),
                   )}
                 >
-                  <span className="font-medium">{r.model_name}</span>
-                  <span className="font-semibold tabular-nums">{displayRatio.toFixed(2)}</span>
+                  <span className="truncate font-medium">{r.model_name}</span>
+                  <span className="rounded bg-background/60 px-1 font-semibold tabular-nums">
+                    {displayRateValue(r, recharge)}
+                  </span>
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
                 <p className="font-medium">{r.model_name}</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {"倍率："}
+                  {displayRateValue(r, recharge)}
+                </p>
                 {r.description ? (
                   <p className="mt-0.5 text-muted-foreground">{r.description}</p>
                 ) : (

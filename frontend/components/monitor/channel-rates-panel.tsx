@@ -9,7 +9,7 @@ import {
 import { useChannels, useChannelRates } from "@/lib/queries"
 import { channelTypeLabel, convertedRate, rechargeRatio, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { Channel } from "@/lib/api-types"
+import type { Channel, RateSnapshot } from "@/lib/api-types"
 
 /**
  * 按倍率给 chip 上色：
@@ -25,11 +25,33 @@ function ratioTone(r: number): string {
   return "bg-muted text-foreground ring-border"
 }
 
+function rateSortValue(rate: RateSnapshot, recharge: number): number {
+  return rate.ratio_label ? Number.POSITIVE_INFINITY : convertedRate(rate.ratio, recharge)
+}
+
+function displayRateValue(rate: RateSnapshot, recharge: number): string {
+  if (rate.ratio_label) return rate.ratio_label
+  return convertedRate(rate.ratio, recharge).toFixed(2)
+}
+
+function rateChipClass(rate: RateSnapshot, recharge: number): string {
+  if (rate.ratio_label) {
+    return "border border-dashed border-border bg-background text-muted-foreground shadow-xs hover:bg-muted/60"
+  }
+  const displayRatio = convertedRate(rate.ratio, recharge)
+  return cn(
+    "ring-1 ring-inset",
+    ratioTone(displayRatio),
+  )
+}
+
 function ChannelRateRow({ channel }: { channel: Channel }) {
   const { data, loading } = useChannelRates(channel.id)
   const ratio = rechargeRatio(channel.recharge_ratio)
   const rates = [...(data ?? [])].sort(
-    (a, b) => convertedRate(a.ratio, ratio) - convertedRate(b.ratio, ratio),
+    (a, b) =>
+      rateSortValue(a, ratio) - rateSortValue(b, ratio) ||
+      a.model_name.localeCompare(b.model_name),
   )
   const latest = rates[0]?.last_seen_at
 
@@ -70,19 +92,19 @@ function ChannelRateRow({ channel }: { channel: Channel }) {
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {rates.map((r) => {
-              const displayRatio = convertedRate(r.ratio, ratio)
               const updated = `最近更新：${relativeTime(r.last_seen_at)}`
               const chip = (
                 <span
                   key={r.id}
                   className={cn(
-                    "inline-flex cursor-default items-center gap-1.5 rounded-md px-2 py-0.5 text-xs ring-1 ring-inset transition-colors",
-                    "hover:bg-muted/60",
-                    ratioTone(displayRatio),
+                    "inline-flex max-w-full cursor-default items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                    rateChipClass(r, ratio),
                   )}
                 >
-                  <span className="font-medium">{r.model_name}</span>
-                  <span className="font-semibold tabular-nums">{displayRatio.toFixed(2)}</span>
+                  <span className="truncate font-medium">{r.model_name}</span>
+                  <span className="rounded bg-background/60 px-1.5 py-0.5 font-semibold tabular-nums">
+                    {displayRateValue(r, ratio)}
+                  </span>
                 </span>
               )
               return (
@@ -90,6 +112,10 @@ function ChannelRateRow({ channel }: { channel: Channel }) {
                   <TooltipTrigger asChild>{chip}</TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs">
                     <p className="font-medium">{r.model_name}</p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      {"倍率："}
+                      {displayRateValue(r, ratio)}
+                    </p>
                     {r.description ? (
                       <p className="mt-0.5 text-muted-foreground">{r.description}</p>
                     ) : (
